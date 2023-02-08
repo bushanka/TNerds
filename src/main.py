@@ -2,8 +2,6 @@ from telethon import TelegramClient
 from telethon.tl.functions.messages import GetHistoryRequest
 
 # Remember to use your own values from my.telegram.org!
-api_id = 23047997
-api_hash = 'f8bb4aa514638133db7fe8a70f9f20eb'
 client = TelegramClient('main_account', api_id, api_hash)
 
 
