@@ -8,7 +8,6 @@ from src.bot.reply_texts import GREET_TEXT, ADD_CHANNELS_TEXT, ACTIVATE_TEST_ACC
     CHANNEL_ADDED, ERROR_CHANNEL_ALREADY_EXISTS, ERROR_MESSAGE_NOT_FROM_PUBLIC
 import datetime
 from src.client.client import get_message_from_channel, add_channels_to_main
-from src.summarizer.summary import summ_text
 
 
 class State(Enum):
@@ -54,6 +53,24 @@ def markup_generator(user_id):
             ]
         ]
     return markup
+
+
+async def form_and_send_digest(user_id):
+    channels = (sql_query('SELECT public FROM users_data WHERE userid = ?;', params=(user_id,))[0][0]).split(',')
+    channels = [int(k) for k in channels[:len(channels) - 1:]]
+
+    coros = [get_message_from_channel(ch) for ch in channels]
+
+    digest = await asyncio.gather(*coros)
+
+    await bot.send_message(user_id, str(digest[0].messages[0].message), buttons=Button.inline('Назад', b'back_to_main'))
+
+
+async def check_digest():
+    """Проверяет каждую минуту, надо ли присылать дайджест"""
+    while True:
+        await asyncio.sleep(60)
+        print('Time to Send!!')
 
 
 @bot.on(events.NewMessage(pattern='/start'))
@@ -146,19 +163,10 @@ async def handler_digest(event):
 @bot.on(events.CallbackQuery(data=b'digest'))
 async def handler_digest(event):
     """Формирует дайджест и присылает его пользователю"""
-    # TODO Добавить функцию суммаризатора ассинхронную (aiohttp?), вынести эту функци в отдельную, чтобы вызывать ее внутри кода
-    # TODO Сделать рассылку по времени. Добавить ссылку на источник в суммаризированный текст - есть канал - есть инфа по нему - есть и ссылка
+    # TODO Сделать рассылку по времени.
     sender = await event.get_sender()
     user_info = (sender.id, sender.username)
-
-    channels = (sql_query('SELECT public FROM users_data WHERE userid = ?;', params=(user_info[0],))[0][0]).split(',')
-    channels = [int(k) for k in channels[:len(channels) - 1:]]
-
-    coros = [get_message_from_channel(ch) for ch in channels]
-
-    digest = await asyncio.gather(*coros)
-
-    await event.respond(str(digest[0].messages[0].message), buttons=Button.inline('Назад', b'back_to_main'))
+    await form_and_send_digest(user_info[0])
 
 
 @bot.on(events.NewMessage())
@@ -215,7 +223,11 @@ def main():
         );"""
     )
 
-    bot.run_until_disconnected()
+    loop = asyncio.get_event_loop()
+    tasks = [loop.create_task(check_digest()),
+             loop.create_task(bot.run_until_disconnected())]
+    loop.run_until_complete(asyncio.wait(tasks))
+    loop.close()
 
 
 if __name__ == '__main__':
